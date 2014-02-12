@@ -3,19 +3,6 @@
 
 source ./hdpsetup.sh
 
-#This script will be generated and it will be used to mount data drives in each node in the cluster
-mntscript="mountdrive.sh"
-#This file will generate hosts file that can be appended to /etc/hosts on each node.
-hostsfile="hosts.txt"
-
-if [ -e $mntscript ]; then
-        rm $mntscript
-fi
-
-if [ -e $hostfile ]; then
-        rm $hostsfile
-fi
-
 #This script requires jq json processor
 #check to see if jq is available and download it if necessary
 result=$(which jq)
@@ -81,53 +68,6 @@ fi
 printf "######################################## Virtual Network Details #######################################\n"
 azure network vnet show "$vnetName" --json
 
-##############################################################
-## Create the management node if it does not exist
-##############################################################
-vmName=$vmNamePrefix"0"
-cloudServiceName=$cloudServicePrefix"0"
-dnsName=$cloudServiceName".cloudapp.net"
-
-#Check to see if the cloud servide already exists
-result=$(azure service show $cloudServiceName --json | jq '.ServiceName')
-if [[ -z $result ]]; then
-        printf "Service does not exist. About to create cloud service:$cloudServiceName in affinity group:$affinityGroupName\n"
-        (azure service create --affinitygroup "${affinityGroupName}" --serviceName $cloudServiceName) || { echo "Failed to create Cloud Service $cloudServiceName"; exit 1; }
-else
-	printf "Cloud Service $cloudServiceName exists\n"
-fi
-
-#show the cloud service details
-printf "######################################## Cloud Service Management Node Details #######################################\n"
-azure service show "$cloudServiceName" --json
-
-#Check to see if the VM already exists
-result=$(azure vm show $vmName --json | jq '.VMName')
-if [[ -z $result ]]; then
-
-        printf "Virtual machine $vnName does not exist. Creating ...\n" 
-	#create the vm and attach data disks
-	(azure vm create --vm-size $instanceSize --vm-name $vmName --ssh 22 --virtual-network-name $vnetName --subnet-names $subnetName $dnsName $imageName $adminUserName $adminPassword) || { echo "Failed to create vm $vmName"; exit 1;}
-
-	#add all the necessary data disks
-	index=0
-	while [ $index -lt $numOfDisks ]; do
-		azure vm disk attach-new --verbose $vmName $diskSizeInGB
-		let index=index+1
-	done
-	
-	#add endpoint for ambari web interface
-	azure vm endpoint create --endpoint-name "Ambari" $vmName 8080 8080
-
-else
-	printf "Virtual machine $vmName exists\n"
-fi
-
-printf "######################################## Virtual Machine Management Node Details #######################################\n"
-#display the details about the newly created VM
-azure vm show $vmName --json
-
-
 ##################################################Create the VM that will be used to create custom image for nodes
 #Create the virtual machine for the master image to clone the cluster nodes
 
@@ -162,9 +102,3 @@ fi
 printf "######################################## Virtual Machine  Master Image Details #######################################\n"
 #display the details about the newly created VM
 azure vm show $vmName --json
-
-#display the details about the newly created VM
-ipaddress=$(azure vm show $vmName --json | jq '.IPAddress')
-printf "vmName is %s, ip address is %s, hosts file name is %s\n", $vmName, $ipaddress, $hostsfile
-#ipaddress=${$ipaddress//"//}
-echo "$ipaddress $vmName" >> $hostsfile

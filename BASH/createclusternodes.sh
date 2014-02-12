@@ -2,7 +2,12 @@
 #Creates the nodes in the cluster from a custom image
 #Expectation is that affinity group, storage account, virtual network have already been setup
 
-source ~/scripts/hdpsetup.sh
+source ./hdpsetup.sh
+
+#This script will be generated and it will be used to mount data drives in each node in the cluster
+mntscript="mountdrive.sh"
+#This file will generate hosts file that can be appended to /etc/hosts on each node.
+hostsfile="hosts.txt"
 
 #This script requires jq json processor
 #check to see if jq is available and download it if necessary
@@ -114,9 +119,15 @@ while [ $loopIndex -le $nodeCount ]; do
 		printf "Virtual machine $vmName exists\n"
 	fi
 
+	echo "ssh ${adminUserName}@${vmName}:/root/scripts/st.pl" >> $mntscript
+
+
 	printf "######################################## Virtual Machine Details #######################################\n"
 	#display the details about the newly created VM
-	azure vm show $vmName --json
+	ipaddress=$(azure vm show $vmName --json | jq '.IPAddress')
+	#remove the double quotes from the IP address
+	echo "$ipaddress $vmName" | sed -e 's/\"//g' >> $hostsfile
 
 	let loopIndex=loopIndex+1
 done
+chmod a+x $mntscript
